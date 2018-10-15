@@ -662,8 +662,8 @@ def do_convert_data(input_tar_file: str, output_dir: str) -> None:
 
     logging.info('Start importing message data')
     for message_key in ['UserMessage',
-                        'NotificationMessage',
-                        'PrivateUserMessage']:
+                        'NotificationMessage']:
+                        # 'PrivateUserMessage']:
         write_message_data(
             realm_id=realm_id,
             message_key=message_key,
