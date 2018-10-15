@@ -38,6 +38,7 @@ from zerver.data_import.import_util import (
 )
 
 from zerver.data_import.hipchat_attachment import AttachmentHandler
+from zerver.data_import.hipchat_message_map import create_message_id_map
 from zerver.data_import.hipchat_user import UserHandler
 from zerver.data_import.sequencer import sequencer
 
@@ -359,6 +360,7 @@ def write_emoticon_data(realm_id: int,
 
 def write_message_data(realm_id: int,
                        message_key: str,
+                       message_id_map: Dict[str, int],
                        zerver_recipient: List[ZerverFieldsT],
                        zerver_subscription: List[ZerverFieldsT],
                        data_dir: str,
@@ -415,6 +417,7 @@ def write_message_data(realm_id: int,
             files_dir=files_dir,
             get_recipient_id=get_recipient_id,
             message_key=message_key,
+            message_id_map=message_id_map,
             zerver_subscription=zerver_subscription,
             data_dir=data_dir,
             output_dir=output_dir,
@@ -428,6 +431,7 @@ def process_message_file(realm_id: int,
                          files_dir: str,
                          get_recipient_id: Callable[[ZerverFieldsT], int],
                          message_key: str,
+                         message_id_map: Dict[str, int],
                          zerver_subscription: List[ZerverFieldsT],
                          data_dir: str,
                          output_dir: str,
@@ -457,11 +461,14 @@ def process_message_file(realm_id: int,
             else:
                 sender_id = d['sender']['id']
 
+            hipchat_id = d['id']
+
             return dict(
                 fn_id=fn_id,
                 sender_id=sender_id,
                 receiver_id=d.get('receiver', {}).get('id'),
                 content=d['message'],
+                hipchat_id=hipchat_id,
                 mention_user_ids=d.get('mentions', []),
                 pub_date=str_date_to_float(d['timestamp']),
                 attachment=d.get('attachment'),
@@ -482,6 +489,7 @@ def process_message_file(realm_id: int,
         process_raw_message_batch(
             realm_id=realm_id,
             raw_messages=lst,
+            message_id_map=message_id_map,
             zerver_subscription=zerver_subscription,
             user_handler=user_handler,
             attachment_handler=attachment_handler,
@@ -499,6 +507,7 @@ def process_message_file(realm_id: int,
 
 def process_raw_message_batch(realm_id: int,
                               raw_messages: List[Dict[str, Any]],
+                              message_id_map: Dict[str, int],
                               zerver_subscription: List[ZerverFieldsT],
                               user_handler: UserHandler,
                               attachment_handler: AttachmentHandler,
@@ -518,9 +527,9 @@ def process_raw_message_batch(realm_id: int,
 
     mention_map = dict()  # type: Dict[int, Set[int]]
 
-    def make_message(message_id: int, raw_message: ZerverFieldsT) -> ZerverFieldsT:
-        # One side effect here:
-        mention_map[message_id] = set(raw_message['mention_user_ids'])
+    def make_message(raw_message: ZerverFieldsT) -> ZerverFieldsT:
+        hipchat_id = raw_message['hipchat_id']
+        message_id = message_id_map[hipchat_id]
 
         content = fix_mentions(
             content=raw_message['content'],
@@ -531,6 +540,9 @@ def process_raw_message_batch(realm_id: int,
         rendered_content = None
         subject = 'archived'
         user_id = raw_message['sender_id']
+
+        # One side effect here:
+        mention_map[message_id] = set(raw_message['mention_user_ids'])
 
         # Another side effect:
         extra_content = attachment_handler.handle_message_data(
@@ -560,7 +572,6 @@ def process_raw_message_batch(realm_id: int,
 
     zerver_message = [
         make_message(
-            message_id=NEXT_ID('message'),
             raw_message=raw_message
         )
         for raw_message in raw_messages
@@ -661,12 +672,21 @@ def do_convert_data(input_tar_file: str, output_dir: str) -> None:
     realm['zerver_realmemoji'] = zerver_realmemoji
 
     logging.info('Start importing message data')
+
+    message_id_map = create_message_id_map(
+        data_dir=input_data_dir,
+        date_to_float=str_date_to_float,
+    )
+
+    logging.info('Start converting message data')
+
     for message_key in ['UserMessage',
                         'NotificationMessage']:
                         # 'PrivateUserMessage']:
         write_message_data(
             realm_id=realm_id,
             message_key=message_key,
+            message_id_map=message_id_map,
             zerver_recipient=zerver_recipient,
             zerver_subscription=zerver_subscription,
             data_dir=input_data_dir,
