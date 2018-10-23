@@ -81,7 +81,7 @@ def update_user_backend(request: HttpRequest, user_profile: UserProfile, user_id
                         is_admin: Optional[bool]=REQ(default=None, validator=check_bool)) -> HttpResponse:
     target = access_user_by_id(user_profile, user_id, allow_deactivated=True, allow_bots=True)
 
-    if is_admin is not None:
+    if is_admin is not None and target.is_realm_admin != is_admin:
         if not is_admin and check_last_admin(user_profile):
             return json_error(_('Cannot remove the only organization administrator'))
         do_change_is_admin(target, is_admin)
@@ -364,7 +364,6 @@ def get_members_backend(request: HttpRequest, user_profile: UserProfile,
     '''
 
     realm = user_profile.realm
-    admin_ids = set(u.id for u in user_profile.realm.get_admin_users())
 
     query = UserProfile.objects.filter(
         realm_id=realm.id
@@ -374,6 +373,7 @@ def get_members_backend(request: HttpRequest, user_profile: UserProfile,
         'realm_id',
         'full_name',
         'is_bot',
+        'is_realm_admin',
         'is_active',
         'bot_type',
         'avatar_source',
@@ -391,10 +391,9 @@ def get_members_backend(request: HttpRequest, user_profile: UserProfile,
             full_name=row['full_name'],
             is_bot=row['is_bot'],
             is_active=row['is_active'],
+            is_admin=row['is_realm_admin'],
             bot_type=row['bot_type'],
         )
-
-        result['is_admin'] = user_id in admin_ids
 
         result['avatar_url'] = get_avatar_field(
             user_id=user_id,

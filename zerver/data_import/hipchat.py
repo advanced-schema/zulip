@@ -29,9 +29,9 @@ from zerver.data_import.import_util import (
     build_realm_emoji,
     build_recipients,
     build_stream,
-    build_subscriptions,
+    build_subscription,
+    build_user,
     build_user_message,
-    build_user_profile,
     build_zerver_realm,
     create_converted_data_files,
     write_avatar_png,
@@ -108,7 +108,10 @@ def convert_user_data(user_handler: UserHandler,
         if not email:
             # Hipchat guest users don't have emails, so
             # we just fake them.
-            assert(is_guest)
+            try:
+                assert(is_guest)
+            except:
+                exit(1)
             email = 'guest-{id}@example.com'.format(id=id)
             delivery_email = email
 
@@ -126,7 +129,7 @@ def convert_user_data(user_handler: UserHandler,
         else:
             avatar_source = 'G'
 
-        return build_user_profile(
+        return build_user(
             avatar_source=avatar_source,
             date_joined=date_joined,
             delivery_email=delivery_email,
@@ -305,17 +308,17 @@ def write_emoticon_data(realm_id: int,
 
     flat_data = [
         dict(
-            path=d['Emoticon']['path'],
-            name=d['Emoticon']['shortcut'],
+            path=d['path'],
+            name=d['shortcut'],
         )
-        for d in data
+        for d in data['Emoticons']
     ]
 
     emoji_folder = os.path.join(output_dir, 'emoji')
     os.makedirs(emoji_folder, exist_ok=True)
 
     def process(data: ZerverFieldsT) -> ZerverFieldsT:
-        source_sub_path = data['path']
+        source_sub_path = 'files/img/emoticons/' + data['path']
         source_fn = os.path.basename(source_sub_path)
         source_path = os.path.join(data_dir, source_sub_path)
 
@@ -461,8 +464,15 @@ def process_message_file(realm_id: int,
             else:
                 sender_id = d['sender']['id']
 
-            hipchat_id = d['id']
+                if sender_id == 0:
+                    mirror_user = user_handler.get_mirror_user(
+                        realm_id=realm_id,
+                        name=d['sender']['name'],
+                    )
+                    sender_id = mirror_user['id']
 
+            hipchat_id = d['id']
+            print("Message id is " + d['id'])
             return dict(
                 fn_id=fn_id,
                 sender_id=sender_id,
@@ -623,6 +633,51 @@ def make_user_messages(zerver_message: List[ZerverFieldsT],
 
     return zerver_usermessage
 
+def do_build_dict_hipchat_user_by_id(data: [ZerverFieldsT]):
+    users={}
+    for d in data:
+        users[d['User']['id']]=d['User']
+    return users
+def do_build_dict_zulip_user_by_email(data: [ZerverFieldsT]):
+    users={}
+    for d in data:
+        users[d['email']] = d
+    return users
+def do_build_dict_zulip_stream_by_name(data: [ZerverFieldsT]):
+    streams={}
+    for d in data:
+        streams[d['name']] = d
+    return streams
+def do_build_dict_recipient_by_type_id(data: [ZerverFieldsT]):
+    recipients={}
+    for d in data:
+        if d['type'] == 2:
+            recipients[d['type_id']] = d
+    return recipients
+def is_subscription_exists(subscriptions: List[ZerverFieldsT], recipient_id: int, user_id: int):
+    for subscription in subscriptions:
+        if subscription['user_profile'] == user_id and subscription['recipient'] == recipient_id:
+            return True
+    return False
+def do_subscriptions(raw_data: List[ZerverFieldsT], zerver_stream: List[ZerverFieldsT], realm_id: int, realm: ZerverFieldsT, users: List[ZerverFieldsT], raw_user_data: List[ZerverFieldsT]) -> List[ZerverFieldsT]:
+    from pprint import pprint
+    users_hipchat = do_build_dict_hipchat_user_by_id(raw_user_data)
+    users_zulip = do_build_dict_zulip_user_by_email(data=users)
+    stream_zulip = do_build_dict_zulip_stream_by_name(zerver_stream)
+    recipient_zulip = do_build_dict_recipient_by_type_id(realm['zerver_recipient'])
+    subscriptions = []
+    subscription_id = 1
+    for d in raw_data:
+        for members in d['Room']['members']:
+            if is_subscription_exists(subscriptions=subscriptions,recipient_id = recipient_zulip[stream_zulip[d['Room']['name']]['id']]['id'], user_id = users_zulip[users_hipchat[members]['email']]['id']) == False:
+                subscription = build_subscription(
+                    recipient_id=recipient_zulip[stream_zulip[d['Room']['name']]['id']]['id'],
+                    user_id=users_zulip[users_hipchat[members]['email']]['id'],
+                    subscription_id=subscription_id,
+                )
+                subscriptions.append(subscription)
+                subscription_id +=1
+    return subscriptions
 def do_convert_data(input_tar_file: str, output_dir: str) -> None:
     input_data_dir = untar_input_file(input_tar_file)
 
@@ -653,14 +708,15 @@ def do_convert_data(input_tar_file: str, output_dir: str) -> None:
 
     zerver_recipient = build_recipients(
         zerver_userprofile=normal_users,
-        zerver_stream=zerver_stream,
-    )
+        zerver_stream=zerver_stream,    )
     realm['zerver_recipient'] = zerver_recipient
-
-    zerver_subscription = build_subscriptions(
-        zerver_userprofile=normal_users,
-        zerver_recipient=zerver_recipient,
+    zerver_subscription = do_subscriptions(
+        raw_data=raw_stream_data,
+        realm_id=realm_id,
         zerver_stream=zerver_stream,
+        realm=realm,
+        users=normal_users,
+        raw_user_data=raw_user_data,
     )
     realm['zerver_subscription'] = zerver_subscription
 
@@ -681,8 +737,8 @@ def do_convert_data(input_tar_file: str, output_dir: str) -> None:
     logging.info('Start converting message data')
 
     for message_key in ['UserMessage',
-                        'NotificationMessage']:
-                        # 'PrivateUserMessage']:
+                        'NotificationMessage',
+                        'PrivateUserMessage']:
         write_message_data(
             realm_id=realm_id,
             message_key=message_key,

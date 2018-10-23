@@ -12,14 +12,11 @@ import random
 
 from typing import Any, Dict, List, Optional, SupportsInt, Tuple, Type, Union
 
-from apns2.client import APNsClient
-from apns2.payload import Payload as APNsPayload
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils.timezone import now as timezone_now
 from django.utils.translation import ugettext as _
 from gcm import GCM
-from hyper.http20.exceptions import HTTP20Error
 import requests
 import urllib
 import ujson
@@ -55,10 +52,13 @@ def hex_to_b64(data: str) -> bytes:
 # Sending to APNs, for iOS
 #
 
-_apns_client = None  # type: Optional[APNsClient]
+_apns_client = None  # type: Optional[Any]
 _apns_client_initialized = False
 
-def get_apns_client() -> APNsClient:
+def get_apns_client() -> Any:
+    # We lazily do this import as part of optimizing Zulip's base
+    # import time.
+    from apns2.client import APNsClient
     global _apns_client, _apns_client_initialized
     if not _apns_client_initialized:
         # NB if called concurrently, this will make excess connections.
@@ -104,7 +104,15 @@ APNS_MAX_RETRIES = 3
 @statsd_increment("apple_push_notification")
 def send_apple_push_notification(user_id: int, devices: List[DeviceToken],
                                  payload_data: Dict[str, Any], remote: bool=False) -> None:
-    client = get_apns_client()
+    # We lazily do the APNS imports as part of optimizing Zulip's base
+    # import time; since these are only needed in the push
+    # notification queue worker, it's best to only import them in the
+    # code that needs them.
+    from apns2.payload import Payload as APNsPayload
+    from apns2.client import APNsClient
+    from hyper.http20.exceptions import HTTP20Error
+
+    client = get_apns_client()  # type: APNsClient
     if client is None:
         logging.warning("APNs: Dropping a notification because nothing configured.  "
                         "Set PUSH_NOTIFICATION_BOUNCER_URL (or APNS_CERT_FILE).")
@@ -514,7 +522,7 @@ def get_common_payload(message: Message) -> Dict[str, Any]:
 
     return data
 
-def get_apns_payload(message: Message) -> Dict[str, Any]:
+def get_apns_payload(user_profile: UserProfile, message: Message) -> Dict[str, Any]:
     zulip_data = get_common_payload(message)
     zulip_data.update({
         'message_ids': [message.id],
@@ -632,7 +640,7 @@ def handle_push_notification(user_profile_id: int, missed_message: Dict[str, Any
     message.trigger = missed_message['trigger']
     message.stream_name = missed_message.get('stream_name', None)
 
-    apns_payload = get_apns_payload(message)
+    apns_payload = get_apns_payload(user_profile, message)
     gcm_payload = get_gcm_payload(user_profile, message)
     logging.info("Sending push notification to user %s" % (user_profile_id,))
 
