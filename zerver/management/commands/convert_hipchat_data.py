@@ -39,12 +39,16 @@ class Command(BaseCommand):
         parser.add_argument('--output', dest='output_dir',
                             action="store",
                             help='Directory to write exported data to.')
+        parser.add_argument('--do-tar', dest='do_tar',
+                            default=False,
+                            action="store_true",
+                            help='create tarball')
 
         parser.formatter_class = argparse.RawTextHelpFormatter
 
     def handle(self, *args: Any, **options: Any) -> None:
         output_dir = options["output_dir"]
-
+        do_tar = options["do_tar"]
         if output_dir is None:
             print("You need to specify --output <output directory>")
             exit(1)
@@ -65,4 +69,4 @@ class Command(BaseCommand):
                 exit(1)
 
             print("Converting Data ...")
-            do_convert_data(path, output_dir)
+            do_convert_data(path, output_dir, do_tar)
