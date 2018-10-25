@@ -557,7 +557,6 @@ def process_raw_message_batch(realm_id: int,
         match = re.findall(r'@(\w+)',content,re.UNICODE)
         for short_name in match:
             if short_name in user_by_mentions:
-                print(short_name)
                 content = content.replace('@' + short_name, '@**' + short_name + '**')
         return content
 
@@ -699,7 +698,6 @@ def is_subscription_exists(subscriptions: List[ZerverFieldsT], recipient_id: int
             return True
     return False
 def do_subscriptions(raw_data: List[ZerverFieldsT], zerver_stream: List[ZerverFieldsT], realm_id: int, realm: ZerverFieldsT, users: List[ZerverFieldsT], raw_user_data: List[ZerverFieldsT], zerver_recipient: List[ZerverFieldsT]) -> List[ZerverFieldsT]:
-    from pprint import pprint
     users_hipchat = do_build_dict_hipchat_user_by_id(raw_user_data)
     users_zulip = do_build_dict_zulip_user_by_email(data=users)
     stream_zulip = do_build_dict_zulip_stream_by_name(zerver_stream)
@@ -733,37 +731,41 @@ def do_subscriptions(raw_data: List[ZerverFieldsT], zerver_stream: List[ZerverFi
         subscriptions.append(subscription)
         subscription_id += 1
     return subscriptions
-def do_convert_data(input_tar_file: str, output_dir: str) -> None:
+def do_convert_data(input_tar_file: str, output_dir: str,do_tar: bool) -> None:
     input_data_dir = untar_input_file(input_tar_file)
+    logging.info("Got data input directory" + output_dir + input_tar_file)
 
     attachment_handler = AttachmentHandler()
     user_handler = UserHandler()
 
     realm_id = 0
     realm = make_realm(realm_id=realm_id)
-
     # users.json -> UserProfile
+    logging.info("Reading user data")
     raw_user_data = read_user_data(data_dir=input_data_dir)
     convert_user_data(
         user_handler=user_handler,
         raw_data=raw_user_data,
         realm_id=realm_id,
     )
+    logging.info("Done reading user data")
     normal_users = user_handler.get_normal_users()
+    
     # Don't write zerver_userprofile here, because we
     # may add more users later.
 
     # streams.json -> Stream
+    logging.info("Reading room data")
     raw_stream_data = read_room_data(data_dir=input_data_dir)
     zerver_stream = convert_room_data(
         raw_data=raw_stream_data,
         realm_id=realm_id,
     )
     realm['zerver_stream'] = zerver_stream
-
+    logging.info("Builiding recipients")
     zerver_recipient = build_recipients(
         zerver_userprofile=normal_users,
-        zerver_stream=zerver_stream,    )
+        zerver_stream=zerver_stream,)
     realm['zerver_recipient'] = zerver_recipient
     zerver_subscription = do_subscriptions(
         raw_data=raw_stream_data,
@@ -821,7 +823,11 @@ def do_convert_data(input_tar_file: str, output_dir: str) -> None:
         output_dir=output_dir,
         realm_id=realm_id,
     )
-
-    logging.info('Start making tarball')
-   # subprocess.check_call(["tar", "-czf", output_dir + '.tar.gz', output_dir, '-P'])
-    logging.info('Done making tarball')
+    if do_tar:
+        logging.info('Start making tarball')
+        subprocess.check_call(["tar", "-czf", output_dir + '.tar.gz', output_dir, '-P'])
+        logging.info('Done making tarball')
+    else:
+        logging.info('Not doing tarball')
+        logging.info('If you want to do it manually:')
+        logging.info('tar -czf ' + output_dir + '.tar.gz ' +  output_dir + '-P')
