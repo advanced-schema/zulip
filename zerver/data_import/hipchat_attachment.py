@@ -39,7 +39,13 @@ class AttachmentHandler:
             info = self.info_dict[target_path]
             info['message_ids'].add(message_id)
             return info['content']
-
+        # If a hipchat attachement is not found, create an empty file. Might be better to create a placeholder
+        if os.path.isfile(local_fn) == False:
+            logging.info("File" + local_fn + " doest not exsist. creating empty file " + local_fn)
+            basedir = os.path.dirname(local_fn)
+            if not os.path.exists(basedir):
+                os.makedirs(basedir)
+                open(local_fn, 'a').close()
         # HipChat provides size info, but it's not
         # completely trustworthy, so we we just
         # ask the OS for file details.
