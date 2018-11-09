@@ -43,12 +43,16 @@ class Command(BaseCommand):
         parser.add_argument('--mask', dest='masking_content',
                             action="store_true",
                             help='Mask the content for privacy during QA.')
-
+        parser.add_argument('--do-tar', dest='do_tar',
+                            default=False,
+                            action="store_true",
+                            help='create tarball')
         parser.formatter_class = argparse.RawTextHelpFormatter
 
     def handle(self, *args: Any, **options: Any) -> None:
         output_dir = options["output_dir"]
-
+        do_tar = options["do_tar"]
+        
         if output_dir is None:
             print("You need to specify --output <output directory>")
             exit(1)
@@ -75,4 +79,5 @@ class Command(BaseCommand):
                 input_tar_file=path,
                 output_dir=output_dir,
                 masking_content=options.get('masking_content', False),
+                do_tar=do_tar
             )

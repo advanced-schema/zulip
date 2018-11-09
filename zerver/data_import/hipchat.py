@@ -678,7 +678,8 @@ def make_user_messages(zerver_message: List[ZerverFieldsT],
 
 def do_convert_data(input_tar_file: str,
                     output_dir: str,
-                    masking_content: bool) -> None:
+                    masking_content: bool,
+                    do_tar: bool) -> None:
     input_data_dir = untar_input_file(input_tar_file)
 
     attachment_handler = AttachmentHandler()
@@ -783,7 +784,12 @@ def do_convert_data(input_tar_file: str,
         output_dir=output_dir,
         realm_id=realm_id,
     )
-
-    logging.info('Start making tarball')
-    subprocess.check_call(["tar", "-czf", output_dir + '.tar.gz', output_dir, '-P'])
-    logging.info('Done making tarball')
+    if do_tar:
+        logging.info('Start making tarball')
+        subprocess.check_call(["tar", "-czf", output_dir + '.tar.gz', output_dir, '-P'])
+        logging.info('Done making tarball')
+    else:
+        logging.info('Not doing tarball')
+        logging.info('If you want to do it manually:')
+        logging.info('tar -czf ' + output_dir + '.tar.gz ' +  output_dir + '-P')
+        
