@@ -557,7 +557,7 @@ def process_raw_message_batch(realm_id: int,
         match = re.findall(r'@(\w+)',content,re.UNICODE)
         for short_name in match:
             if short_name in user_by_mentions:
-                content = content.replace('@' + short_name, '@**' + short_name + '**')
+                content = content.replace('@' + short_name, '@**' + user_by_mentions[short_name]['full_name'] + '**')
         return content
 
     mention_map = dict()  # type: Dict[int, Set[int]]
