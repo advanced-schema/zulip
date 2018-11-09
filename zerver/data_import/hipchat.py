@@ -315,23 +315,34 @@ def write_emoticon_data(realm_id: int,
     data_file = os.path.join(data_dir, fn)
     with open(data_file) as f:
         data = ujson.load(f)
-
-    flat_data = [
-        dict(
-            path=d['Emoticon']['path'],
-            name=d['Emoticon']['shortcut'],
-        )
-        for d in data
-    ]
+    if 'Emoticons' in data.keys():
+        flat_data = [
+            dict(
+                path=d['path'],
+                name=d['shortcut'],
+            )
+            for d in data['Emoticons']
+        ]
+    else:
+        flat_data = [
+            dict(
+                path=d['Emoticon']['path'],
+                name=d['Emoticon']['shortcut'],
+            )
+            for d in data
+        ]
 
     emoji_folder = os.path.join(output_dir, 'emoji')
     os.makedirs(emoji_folder, exist_ok=True)
 
     def process(data: ZerverFieldsT) -> ZerverFieldsT:
-        source_sub_path = data['path']
-        source_fn = os.path.basename(source_sub_path)
+        
+        source_sub_path = data['path']        
         source_path = os.path.join(data_dir, source_sub_path)
-
+        if os.path.exists(source_path) == False:
+            source_sub_path='files/img/emoticons/' + data['path']
+            source_path = os.path.join(data_dir,source_sub_path)
+        source_fn = os.path.basename(source_sub_path)        
         # Use our template from RealmEmoji
         # PATH_ID_TEMPLATE = "{realm_id}/emoji/images/{emoji_file_name}"
         target_fn = source_fn
